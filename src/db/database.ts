@@ -5,6 +5,36 @@ let initPromise: Promise<void> | null = null;
 
 const DB_KEY = 'techzone_db';
 
+// Загрузка WASM — пробуем несколько источников
+async function loadWasm(): Promise<Uint8Array | undefined> {
+  const wasmUrls = [
+    // Локальный файл (если скопирован в public)
+    './sql-wasm.wasm',
+    // CDN unpkg
+    'https://unpkg.com/sql.js@1.10.3/dist/sql-wasm.wasm',
+    // CDN jsdelivr
+    'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.wasm',
+    // CDN sql.js.org
+    'https://sql.js.org/dist/sql-wasm.wasm',
+  ];
+
+  for (const url of wasmUrls) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const buffer = await response.arrayBuffer();
+        return new Uint8Array(buffer);
+      }
+    } catch (e) {
+      console.warn(`Failed to load WASM from ${url}:`, e);
+      continue;
+    }
+  }
+  
+  console.warn('All WASM sources failed, trying without wasmBinary...');
+  return undefined;
+}
+
 export async function initDB(): Promise<Database> {
   if (db) return db;
   if (initPromise) {
@@ -13,18 +43,32 @@ export async function initDB(): Promise<Database> {
   }
 
   initPromise = (async () => {
+    const wasmBinary = await loadWasm();
+
     const SQL = await initSqlJs({
-      locateFile: (file: string) => `https://sql.js.org/dist/${file}`
+      wasmBinary: wasmBinary ? wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength) as ArrayBuffer : undefined,
+      locateFile: (file: string) => {
+        // Fallback — пробуем разные CDN
+        if (file.endsWith('.wasm')) {
+          return `https://unpkg.com/sql.js@1.10.3/dist/${file}`;
+        }
+        return `https://unpkg.com/sql.js@1.10.3/dist/${file}`;
+      }
     });
 
     const savedDb = localStorage.getItem(DB_KEY);
     if (savedDb) {
-      const binaryString = atob(savedDb);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      try {
+        const binaryString = atob(savedDb);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        db = new SQL.Database(bytes);
+      } catch (e) {
+        console.warn('Failed to load saved DB, creating new one:', e);
+        db = new SQL.Database();
       }
-      db = new SQL.Database(bytes);
     } else {
       db = new SQL.Database();
     }
@@ -100,14 +144,18 @@ export async function initDB(): Promise<Database> {
 
 export function saveDB() {
   if (!db) return;
-  const data = db.export();
-  const bytes = new Uint8Array(data);
-  let str = '';
-  for (let i = 0; i < bytes.length; i++) {
-    str += String.fromCharCode(bytes[i]);
+  try {
+    const data = db.export();
+    const bytes = new Uint8Array(data);
+    let str = '';
+    for (let i = 0; i < bytes.length; i++) {
+      str += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(str);
+    localStorage.setItem(DB_KEY, base64);
+  } catch (e) {
+    console.warn('Failed to save DB:', e);
   }
-  const base64 = btoa(str);
-  localStorage.setItem(DB_KEY, base64);
 }
 
 function rowToObject(columns: string[], values: any[]): any {

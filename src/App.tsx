@@ -987,6 +987,7 @@ function Footer() {
 
 // ===== MAIN APP =====
 function AppContent() {
+  const { loading, dbReady } = useApp();
   const [page, setPage] = useState('home');
   const [pageData, setPageData] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -996,6 +997,11 @@ function AppContent() {
     setPageData(data || null);
     window.scrollTo(0, 0);
   };
+
+  // Показываем loading пока инициализируется БД
+  if (loading || !dbReady) {
+    return <LoadingScreen />;
+  }
 
   const renderPage = () => {
     switch (page) {
@@ -1026,5 +1032,32 @@ export default function App() {
     <AppProvider>
       <AppContent />
     </AppProvider>
+  );
+}
+
+// Loading screen — показывается пока инициализируется БД
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'column',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      fontFamily: 'Inter, sans-serif'
+    }}>
+      <div style={{
+        width: '60px',
+        height: '60px',
+        border: '4px solid rgba(255,255,255,0.3)',
+        borderTop: '4px solid white',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite',
+        marginBottom: '1.5rem'
+      }} />
+      <p style={{ color: 'white', fontSize: '1.125rem', fontWeight: 600 }}>Загрузка TechZone...</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
   );
 }
